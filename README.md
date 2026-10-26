@@ -11,6 +11,8 @@ It reimplements all parts of the original game and a bunch of mods added by Luna
 
 You need a copy of the ROM to extract game resources (levels, images). Then once that's done, the ROM is no longer needed.
 
+Both the USA ROM and the Europe (Rev 1) ROM are supported. With the Europe ROM, the game still runs the USA game logic (at 60 Hz), and the runtime verification against the original ROM is disabled.
+
 It uses the PPU and DSP implementation from [LakeSnes](https://github.com/elzo-d/LakeSnes), but with lots of speed optimizations.
 
 ## Building

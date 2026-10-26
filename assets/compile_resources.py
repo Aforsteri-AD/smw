@@ -186,7 +186,7 @@ def calc_level_len(ea, dbg = False):
       ea += 2
   return ea - ea_org
 
-LUNAR_MAGIC = get_bytes(0xFF0A0, 5) == b'Lunar'
+LUNAR_MAGIC = get_bytes(util.A(0xFF0A0), 5) == b'Lunar'
 
 def extra_lunar_magic_text():
   return '\n\nDo the following steps:\n1) Use Lunar Magic 3.33.\n' + \
@@ -196,18 +196,27 @@ def extra_lunar_magic_text():
 
 
 if LUNAR_MAGIC:
-  s = get_bytes(0xFF0A0, 24).decode('utf8')
+  s = get_bytes(util.A(0xFF0A0), 24).decode('utf8')
   print('Detected %s' % s, file = sys.stderr)
   if s != 'Lunar Magic Version 3.33':
     raise Exception('Invalid Lunar Magic version. Expected 3.33, found "%s"\n' % s + extra_lunar_magic_text())
 
-  if get_byte(0x6F540) != 0xc9:
+  if get_byte(util.A(0x6F540)) != 0xc9:
     raise Exception('The map16 file format is incorrect. ' + extra_lunar_magic_text())
 
 
+# JSL instruction to a US ROM address, translated to the loaded ROM.
+def jsl(addr):
+  return b'\x22' + util.A(addr).to_bytes(3, 'little')
+
 def get_comp_data(ea):
-  data, comp_len = util.decomp(ea, util.get_byte, return_length = True)  
-  return util.get_bytes(ea, comp_len)
+  le_offset_positions = []
+  data, comp_len = util.decomp(ea, util.get_byte, return_length = True, le_offset_positions = le_offset_positions)  
+  r = util.get_bytes(ea, comp_len)
+  # The game decompresses with big endian copy offsets, like the US ROM.
+  for i in le_offset_positions:
+    r[i], r[i + 1] = r[i + 1], r[i]
+  return r
 
 def decomp_data(ea):
   data, comp_len = util.decomp(ea, util.get_byte, return_length = True)  
@@ -254,23 +263,23 @@ class LmFeatures:
 def print_all(args):
   lm_feat = LmFeatures()
   r = []
-  lo, hi, bank = util.get_bytes(0xB992, 50), util.get_bytes(0xB9c4, 50), util.get_bytes(0xB9f6, 50)
+  lo, hi, bank = util.get_bytes(util.A(0xB992), 50), util.get_bytes(util.A(0xB9c4), 50), util.get_bytes(util.A(0xB9f6), 50)
   for i in range(50):
     p = bank[i] << 16 | hi[i] << 8 | lo[i]
     r.append(get_comp_data(p))
   add_asset_packed('kGraphicsPtrs', r)
 
-  data, comp_len = util.decomp(0x80000 | util.get_word(0xB8D8), util.get_byte, return_length = True)
+  data, comp_len = util.decomp(0x80000 | util.get_word(util.A(0xB8D8)), util.get_byte, return_length = True)
   #print('%d: %d: %d' % (0x32, comp_len, len(data)))
   add_asset_uint8('kGfx32', data)
 
-  data, comp_len = util.decomp(0x80000 | util.get_word(0xB88B), util.get_byte, return_length = True)
+  data, comp_len = util.decomp(0x80000 | util.get_word(util.A(0xB88B)), util.get_byte, return_length = True)
   #print('%d: %d: %d' % (0x33, comp_len, len(data)))
   add_asset_uint8('kGfx33', data)
 
   r = [b'']
   for i in range(1, 86):
-    p = util.get_24(0x84D0 + i * 3)
+    p = util.get_24(util.A(0x84D0) + i * 3)
     pl = get_stripe_len(p)
     #if i == 1:
       #print(util.get_bytes(p, 16))
@@ -279,62 +288,62 @@ def print_all(args):
 
   r = []
   for i in range(45):
-    p = util.get_24(0x59000 + i * 3)
+    p = util.get_24(util.A(0x59000) + i * 3)
     pl = get_stripe_len(p)
     r.append(util.get_bytes(p, pl))
   add_asset_packed('kLayer3ImagePtrs', r)
 
-  add_asset_uint8('kSpcCreditsMusicBank', util.get_bytes(0x3e400, 6624))
-  add_asset_uint8('kSpcLevelMusicBank', util.get_bytes(0xEAED6, 16899))
-  add_asset_uint8('kSpcEngine', util.get_bytes(0xe8000, 6321) + b'\x00\x00')
-  add_asset_uint8('kSpcSamples', util.get_bytes(0xf8000, 28538))
-  add_asset_uint8('kSpcOverworldMusicBank', util.get_bytes(0xe98b1, 5667))
+  add_asset_uint8('kSpcCreditsMusicBank', util.get_bytes(util.A(0x3e400), 6624))
+  add_asset_uint8('kSpcLevelMusicBank', util.get_bytes(util.A(0xEAED6), 16899))
+  add_asset_uint8('kSpcEngine', util.get_bytes(util.A(0xe8000), 6321) + b'\x00\x00')
+  add_asset_uint8('kSpcSamples', util.get_bytes(util.A(0xf8000), 28538))
+  add_asset_uint8('kSpcOverworldMusicBank', util.get_bytes(util.A(0xe98b1), 5667))
 
-  add_asset_uint16('kMap16Data_OverworldLayer1', util.get_words(0x05d000, 772))
+  add_asset_uint16('kMap16Data_OverworldLayer1', util.get_words(util.A(0x05d000), 772))
 
-  add_asset_uint16('kMap16Data', util.get_words(0xd8000, (0xA100 - 0x8000) // 2))
-  add_asset_uint16('kMap16Data_Castle', util.get_words(0xdbc00, 712))
-  add_asset_uint16('kMap16Data_Rope', util.get_words(0xdc800, 712))
-  add_asset_uint16('kMap16Data_Underground', util.get_words(0xdd400, 712))
-  add_asset_uint16('kMap16Data_GhostHouse', util.get_words(0xde300, 712))
+  add_asset_uint16('kMap16Data', util.get_words(util.A(0xd8000), (0xA100 - 0x8000) // 2))
+  add_asset_uint16('kMap16Data_Castle', util.get_words(util.A(0xdbc00), 712))
+  add_asset_uint16('kMap16Data_Rope', util.get_words(util.A(0xdc800), 712))
+  add_asset_uint16('kMap16Data_Underground', util.get_words(util.A(0xdd400), 712))
+  add_asset_uint16('kMap16Data_GhostHouse', util.get_words(util.A(0xde300), 712))
 
-  add_asset_uint16('kGlobalPalettes_Sky', util.get_words(0x00B0A0, 16))
-  add_asset_uint16('kGlobalPalettes_Background', util.get_words(0x00B0B0, 96))
-  add_asset_uint16('kGlobalPalettes_Layer3', util.get_words(0xB170, 16))
-  add_asset_uint16('kGlobalPalettes_Foreground', util.get_words(0x00B190, 96))
-  add_asset_uint16('kGlobalPalettes_Objects', util.get_words(0x00B250, 60))
-  add_asset_uint16('kPlayerPalettes', util.get_words(0x00B2C8, 40))
-  add_asset_uint16('kGlobalPalettes_Sprites', util.get_words(0x00B318, 84))
-  add_asset_uint16('kGlobalPalettes_YoshiBerry', util.get_words(0x00B674, 21))
-  add_asset_uint16('kGlobalPalettes_Flashing', util.get_words(0x00B60C, 16))
+  add_asset_uint16('kGlobalPalettes_Sky', util.get_words(util.A(0x00B0A0), 16))
+  add_asset_uint16('kGlobalPalettes_Background', util.get_words(util.A(0x00B0B0), 96))
+  add_asset_uint16('kGlobalPalettes_Layer3', util.get_words(util.A(0xB170), 16))
+  add_asset_uint16('kGlobalPalettes_Foreground', util.get_words(util.A(0x00B190), 96))
+  add_asset_uint16('kGlobalPalettes_Objects', util.get_words(util.A(0x00B250), 60))
+  add_asset_uint16('kPlayerPalettes', util.get_words(util.A(0x00B2C8), 40))
+  add_asset_uint16('kGlobalPalettes_Sprites', util.get_words(util.A(0x00B318), 84))
+  add_asset_uint16('kGlobalPalettes_YoshiBerry', util.get_words(util.A(0x00B674), 21))
+  add_asset_uint16('kGlobalPalettes_Flashing', util.get_words(util.A(0x00B60C), 16))
 
-  add_asset_uint16('kGlobalPalettes_OW_Objects', util.get_words(0xB528, 42))
-  add_asset_uint16('kGlobalPalettes_OW_Sprites', util.get_words(0xB57C, 56))
-  add_asset_uint16('kGlobalPalettes_B5EC', util.get_words(0xB5EC, 16))
-  add_asset_uint16('kGlobalPalettes_OW_Areas', util.get_words(0xB3D8, 168))
-  add_asset_uint16('kGlobalPalettes_OW_AreasPassed', util.get_words(0xB732, 168))
-  add_asset_uint16('kGlobalPalettes_Bowser', util.get_words(0xB69E, 56))
-  add_asset_uint16('kGlobalPalettes_Layer3Smasher', util.get_words(0xB66C, 4))
+  add_asset_uint16('kGlobalPalettes_OW_Objects', util.get_words(util.A(0xB528), 42))
+  add_asset_uint16('kGlobalPalettes_OW_Sprites', util.get_words(util.A(0xB57C), 56))
+  add_asset_uint16('kGlobalPalettes_B5EC', util.get_words(util.A(0xB5EC), 16))
+  add_asset_uint16('kGlobalPalettes_OW_Areas', util.get_words(util.A(0xB3D8), 168))
+  add_asset_uint16('kGlobalPalettes_OW_AreasPassed', util.get_words(util.A(0xB732), 168))
+  add_asset_uint16('kGlobalPalettes_Bowser', util.get_words(util.A(0xB69E), 56))
+  add_asset_uint16('kGlobalPalettes_Layer3Smasher', util.get_words(util.A(0xB66C), 4))
   #add_asset_uint16('', util.get_words(0x, ))
 
  
-  add_asset_uint8('kGameMode1B_EndingCinema_Tilemaps', util.get_bytes(0xC95C7, 1873))
-  add_asset_uint16('kGameMode1B_EndingCinema_RowPointers', util.get_words(0xC9D18, 202))
+  add_asset_uint8('kGameMode1B_EndingCinema_Tilemaps', util.get_bytes(util.A(0xC95C7), 1873))
+  add_asset_uint16('kGameMode1B_EndingCinema_RowPointers', util.get_words(util.A(0xC9D18), 202))
 
-  add_asset_uint8('kLevelInfo_05F000', util.get_bytes(0x5f000, 0x200))  
-  add_asset_uint8('kLevelInfo_05F200', util.get_bytes(0x5f200, 0x200))  
-  add_asset_uint8('kLevelInfo_05F400', util.get_bytes(0x5f400, 0x200))
-  add_asset_uint8('kLevelInfo_05F600', util.get_bytes(0x5f600, 0x200))
+  add_asset_uint8('kLevelInfo_05F000', util.get_bytes(util.A(0x5f000), 0x200))  
+  add_asset_uint8('kLevelInfo_05F200', util.get_bytes(util.A(0x5f200), 0x200))  
+  add_asset_uint8('kLevelInfo_05F400', util.get_bytes(util.A(0x5f400), 0x200))
+  add_asset_uint8('kLevelInfo_05F600', util.get_bytes(util.A(0x5f600), 0x200))
 
-  add_asset_uint8('kLoadLevel_DATA_05D608', util.get_bytes(0x5D608, 0x100))
+  add_asset_uint8('kLoadLevel_DATA_05D608', util.get_bytes(util.A(0x5D608), 0x100))
 
-  add_asset_uint8('kDisplayMessage_DATA_05A5D9', util.get_bytes(0x5A5D9, 2854))
+  add_asset_uint8('kDisplayMessage_DATA_05A5D9', util.get_bytes(util.A(0x5A5D9), 2854))
 
-  add_asset_uint8('kOverworldLightningAndRandomCloudSpawning', util.get_bytes(0x4F708, 128))
+  add_asset_uint8('kOverworldLightningAndRandomCloudSpawning', util.get_bytes(util.A(0x4F708), 128))
 
-  add_asset_uint16('kLevelNames', util.get_words(0x4A0FC, 256))
+  add_asset_uint16('kLevelNames', util.get_words(util.A(0x4A0FC), 256))
 
-  add_asset_uint8('kLineGuideSpeedTableData', util.get_bytes(0x7F9DB, 536))
+  add_asset_uint8('kLineGuideSpeedTableData', util.get_bytes(util.A(0x7F9DB), 536))
 
   def add_packed_levels(name, addr, num, bank = None):
     r = []
@@ -352,10 +361,10 @@ def print_all(args):
 
     add_asset_packed(name, r)
 
-  add_packed_levels('kLevelData_Layer1', 0x5E000, 0x200)
-  add_packed_levels('kEntranceData_Layer1', 0x5d766, 6)
-  add_packed_levels('kChoclateIsland2_Layer1', 0x5DB08, 9, bank = 6)
-  add_packed_levels('kRollCallData_Layer1', 0xCAD58, 13, bank = 0xc)
+  add_packed_levels('kLevelData_Layer1', util.A(0x5E000), 0x200)
+  add_packed_levels('kEntranceData_Layer1', util.A(0x5d766), 6)
+  add_packed_levels('kChoclateIsland2_Layer1', util.A(0x5DB08), 9, bank = 6)
+  add_packed_levels('kRollCallData_Layer1', util.A(0xCAD58), 13, bank = 0xc)
 
 
   def add_packed_level_bg(name, addr, num, mode = None):
@@ -371,7 +380,7 @@ def print_all(args):
       else:
         assert 0
 
-      fl = util.get_byte(0xEF310 + i) if num == 0x200 and LUNAR_MAGIC else 0
+      fl = util.get_byte(util.A(0xEF310) + i) if num == 0x200 and LUNAR_MAGIC else 0
       if (ea & 0xff0000) == 0xff0000:
         ea = (ea & 0xffff) | 0xc0000
         fl = ((ea & 0xffff) >= 0xE8FE) << 4 | 2
@@ -386,11 +395,11 @@ def print_all(args):
     add_asset_packed(name, r)
     add_asset_uint8(name + '_IsBg', fls)
 
-  add_packed_level_bg('kLevelData_Layer2', 0x5E600, 0x200)
-  add_packed_level_bg('kEntranceData_Layer2', 0x5d778, 6)
-  add_packed_level_bg('kChoclateIsland2_Layer2', 0x5DB2C, 9, mode = 'choc')
-  add_packed_level_bg('kRollCallData_Layer2', 0xCAD72, 13, mode = 'end')
-  add_packed_level_bg('kBufferCreditsBackgrounds_Layer2', 0xc93c1, 7, mode = 'choc')
+  add_packed_level_bg('kLevelData_Layer2', util.A(0x5E600), 0x200)
+  add_packed_level_bg('kEntranceData_Layer2', util.A(0x5d778), 6)
+  add_packed_level_bg('kChoclateIsland2_Layer2', util.A(0x5DB2C), 9, mode = 'choc')
+  add_packed_level_bg('kRollCallData_Layer2', util.A(0xCAD72), 13, mode = 'end')
+  add_packed_level_bg('kBufferCreditsBackgrounds_Layer2', util.A(0xc93c1), 7, mode = 'choc')
 
   def get_sprite_data_len(ea):
     ea_org = ea
@@ -417,22 +426,22 @@ def print_all(args):
       lx = get_sprite_data_len(ea)
       spr_ranges.append((ea, ea + lx))
 
-    banks = util.get_bytes(0xef100, 512) if get_byte(0x05D8F5) == 0x22 else [7] * 512
+    banks = util.get_bytes(util.A(0xef100), 512) if get_byte(util.A(0x05D8F5)) == 0x22 else [7] * 512
     for i in range(0x200):
-      touch(util.get_word(0x5ec00 + i * 2) | (banks[i] << 16))
+      touch(util.get_word(util.A(0x5ec00) + i * 2) | (banks[i] << 16))
   
-    touch(0x7c3ee)
+    touch(util.A(0x7c3ee))
     for i in range(9):
-      touch(util.get_word(0x5DB1A + i * 2) | 0x70000)
+      touch(util.get_word(util.A(0x5DB1A) + i * 2) | 0x70000)
 
     add_asset_blob('kLvlSprBlob', spr_ranges)
     add_asset_uint8('kLmSpritePtrBankByte', banks)
 
   add_sprites()
 
-  add_asset_uint16('kLoadLevel_SpriteDataPtrs', util.get_words(0x5EC00, 0x200))
-  add_asset_uint8('kFileSelectText_EraseFile', util.get_bytes(0x5B6FE, 203 + 204))
-  add_asset_uint8('kInitializeMode7TilemapsAndPalettes_TilemapData', util.get_bytes(0x3D9DE, 912))
+  add_asset_uint16('kLoadLevel_SpriteDataPtrs', util.get_words(util.A(0x5EC00), 0x200))
+  add_asset_uint8('kFileSelectText_EraseFile', util.get_bytes(util.A(0x5B6FE), 203 + 204))
+  add_asset_uint8('kInitializeMode7TilemapsAndPalettes_TilemapData', util.get_bytes(util.A(0x3D9DE), 912))
 
   def do_u16(name, addr, org_addr, org_size, bank_addr = None):
     p = get_24(addr) if bank_addr == None else util.get_word(addr) | get_byte(bank_addr) << 16
@@ -449,23 +458,23 @@ def print_all(args):
     return p != org_addr
 
   def add_event_tile_entries():
-    do_u16('kLayer2EventData_TileEntries', 0x4E49F, 0x4DD8D, 742)
-    do_u16('kChangingLayer1OverworldTiles_Layer1TileLocation', 0x4EC8C, 0x4D85D, 112)
-    do_u16('kOwEventProcess01_DestroyTileAnimation_DATA_04E587', 0x4EEC9, 0x4E587, 16)
-    if do_u16('kCheckIfDestroyTileEventIsActive_DATA_04E5B6', 0x4E69C, 0x4E5B6, 16):
+    do_u16('kLayer2EventData_TileEntries', util.A(0x4E49F), util.A(0x4DD8D), 742)
+    do_u16('kChangingLayer1OverworldTiles_Layer1TileLocation', util.A(0x4EC8C), util.A(0x4D85D), 112)
+    do_u16('kOwEventProcess01_DestroyTileAnimation_DATA_04E587', util.A(0x4EEC9), util.A(0x4E587), 16)
+    if do_u16('kCheckIfDestroyTileEventIsActive_DATA_04E5B6', util.A(0x4E69C), util.A(0x4E5B6), 16):
       lm_feat.flags |= kLmFeature_DestroyTileAnims
-    do_u16('kOwEventProcess01_DestroyTileAnimation_DATA_04D93D', 0x4EDB8, 0x4D93D, 112)
+    do_u16('kOwEventProcess01_DestroyTileAnimation_DATA_04D93D', util.A(0x4EDB8), util.A(0x4D93D), 112)
 
-    do_u8('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles', 0x4E9F4, 0x4E8E4, 44)  
-    do_u8('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles_TileLayer', 0x4EA27, 0x4E910, 44)  
+    do_u8('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles', util.A(0x4E9F4), util.A(0x4E8E4), 44)  
+    do_u8('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles_TileLayer', util.A(0x4EA27), util.A(0x4E910), 44)  
 
-    do_u16('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles_TileNum', 0x4EA31+1, 0x4E994, 44)
-    do_u16('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles_TilemapLocation', 0x4EA37+1, 0x4E93C, 44)
+    do_u16('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles_TileNum', util.A(0x4EA31)+1, util.A(0x4E994), 44)
+    do_u16('kOwEventProcess07_SilentEventsAndEndOfEvent_SilentEventTiles_TilemapLocation', util.A(0x4EA37)+1, util.A(0x4E93C), 44)
 
-    add_asset_uint8('kOwDestruction_TileToIdx_04E5A7', get_bytes(0x4e5a7, 5))
-    add_asset_uint8('kOwDestruction_TopTile_04E5AC', get_bytes(0x4e5ac, 5))
-    add_asset_uint8('kOwDestruction_BottomTile_04E5B1', get_bytes(0x4e5b1, 5))
-    do_u8('kOwDestruction_TriggerEvent_04E5D6', 0x4E67C, 0x4e5d6, 16)
+    add_asset_uint8('kOwDestruction_TileToIdx_04E5A7', get_bytes(util.A(0x4e5a7), 5))
+    add_asset_uint8('kOwDestruction_TopTile_04E5AC', get_bytes(util.A(0x4e5ac), 5))
+    add_asset_uint8('kOwDestruction_BottomTile_04E5B1', get_bytes(util.A(0x4e5b1), 5))
+    do_u8('kOwDestruction_TriggerEvent_04E5D6', util.A(0x4E67C), util.A(0x4e5d6), 16)
 
   add_event_tile_entries()
 
@@ -477,9 +486,9 @@ def print_all(args):
       return get_bytes(p, get_rats_size(p))
 
     r1, r2, r3, r4 = [], [], [], [], 
-    if get_byte(0x4E9F7) == 0x22:
+    if get_byte(util.A(0x4E9F7)) == 0x22:
       lm_feat.flags |= kLmFeature_EventStuff
-      p = get_24(0x4E9F8)
+      p = get_24(util.A(0x4E9F8))
       r1 = get_words_rats(get_24(p - 0x8008 + 0x8014 + 1))
       r2 = get_words_rats(get_24(p - 0x8008 + 0x8029 + 1))
       r3 = get_words_rats(get_24(p - 0x8008 + 0x802F + 1))
@@ -492,111 +501,112 @@ def print_all(args):
 
   add_eventstuff()
 
-  do_u8('kOverworldLayer2EventTilemap_Tiles', 0x4EAF5, 0xc8000, 3328)
+  do_u8('kOverworldLayer2EventTilemap_Tiles', util.A(0x4EAF5), util.A(0xc8000), 3328)
 
-  p = get_word(0x4DC72) | get_byte(0x4DC79) << 16
+  p = get_word(util.A(0x4DC72)) | get_byte(util.A(0x4DC79)) << 16
   _, sz = unpack_rle_of_size(p, 0x2000)
   add_asset_uint8('kLoadOverworldLayer2AndEventsTilemaps_OverworldLayer2Tilemap', get_bytes(p, sz))
 
-  p = get_word(0x4DC8d) | get_byte(0x4DC79) << 16
+  p = get_word(util.A(0x4DC8d)) | get_byte(util.A(0x4DC79)) << 16
   _, sz = unpack_rle_of_size(p, 0x2000)
   add_asset_uint8('kLoadOverworldLayer2AndEventsTilemaps_OverworldLayer2Tilemap_Prop', get_bytes(p, sz))
 
   do_u8('kOverworldLayer2EventTilemap_Prop', 
-      addr = 0x4DD45, org_addr = 0xC8D00, org_size = 1642, bank_addr = 0x4DD4a)
+      addr = util.A(0x4DD45), org_addr = util.A(0xC8D00), org_size = 1642, bank_addr = util.A(0x4DD4a))
 
-  add_asset_uint8('kLoadOverworldLayer1AndEvents_DATA_0CF7DF', util.get_bytes(0xCF7DF, 0x800))
+  add_asset_uint8('kLoadOverworldLayer1AndEvents_DATA_0CF7DF', util.get_bytes(util.A(0xCF7DF), 0x800))
   
-  add_asset_uint8('kRom', util.ROM.ROM if args.include_rom else b'')
+  # The game's code is the US version, so comparing it against the Europe ROM at runtime would always mismatch.
+  add_asset_uint8('kRom', util.ROM.ROM if args.include_rom and util.ROM.language != 'eu1' else b'')
 
-  add_asset_uint8('kUpdateLevelName_LevelNameStrings', util.get_bytes(0x49ac5, 460))  
-  add_asset_uint8('kGameMode25_ShowEnemyRollcallScreen_TileData', util.get_bytes(0xCAF11, 1681))
+  add_asset_uint8('kUpdateLevelName_LevelNameStrings', util.get_bytes(util.A(0x49ac5), 460))  
+  add_asset_uint8('kGameMode25_ShowEnemyRollcallScreen_TileData', util.get_bytes(util.A(0xCAF11), 1681))
 
   lm_pals = []
-  if LUNAR_MAGIC and get_24(0xef577) == 0xf58320:
+  if LUNAR_MAGIC and get_24(util.A(0xef577)) == 0xf58320:
     for i in range(0x200):
-      pp = util.get_24(0xEF600 + i * 3)
+      pp = util.get_24(util.A(0xEF600) + i * 3)
       lm_pals.append(util.get_bytes(pp, 0x202) if pp else b'')
   add_asset_packed('kLmPalettes', lm_pals)
 
-  add_asset_uint8('kPlayerGFXRt_HeadTilePointerIndex', util.get_bytes(0xE00C, 192))  
-  add_asset_uint8('kPlayerGFXRt_BodyTilePointerIndex', util.get_bytes(0xE0CC, 192))  
+  add_asset_uint8('kPlayerGFXRt_HeadTilePointerIndex', util.get_bytes(util.A(0xE00C), 192))  
+  add_asset_uint8('kPlayerGFXRt_BodyTilePointerIndex', util.get_bytes(util.A(0xE0CC), 192))  
 
-  add_asset_uint8('kLvlInitialFlags', util.get_bytes(0x5DDA0, 96))  
-  add_asset_uint8('kLoadOverworldSprites_SpriteSlotData', util.get_bytes(0x4F625, 65))  
-  add_asset_uint8('kChangingLayer1OverworldTiles_TilesThatChange', util.get_bytes(0x4DA1D, 22))  
-  add_asset_uint8('kChangingLayer1OverworldTiles_TilesToBecome', util.get_bytes(0x4DA33, 22))
+  add_asset_uint8('kLvlInitialFlags', util.get_bytes(util.A(0x5DDA0), 96))  
+  add_asset_uint8('kLoadOverworldSprites_SpriteSlotData', util.get_bytes(util.A(0x4F625), 65))  
+  add_asset_uint8('kChangingLayer1OverworldTiles_TilesThatChange', util.get_bytes(util.A(0x4DA1D), 22))  
+  add_asset_uint8('kChangingLayer1OverworldTiles_TilesToBecome', util.get_bytes(util.A(0x4DA33), 22))
 
-  add_asset_uint8('kOverworldEventProcess01_DestroyTileAnimation_DATA_04EE7A', util.get_bytes(0x4EE7A, 48))
+  add_asset_uint8('kOverworldEventProcess01_DestroyTileAnimation_DATA_04EE7A', util.get_bytes(util.A(0x4EE7A), 48))
 
-  add_asset_uint16('kLevelTileAnimations_FrameData', util.get_words(0x5B999, 208))
+  add_asset_uint16('kLevelTileAnimations_FrameData', util.get_words(util.A(0x5B999), 208))
 
-  add_asset_uint8('kSetPlayerPose_WalkingPoseCount', util.get_bytes(0xDC78, 4))  
+  add_asset_uint8('kSetPlayerPose_WalkingPoseCount', util.get_bytes(util.A(0xDC78), 4))  
 
-  add_asset_uint8('kDrawLoadingLetters_TileData', util.get_bytes(0x90d1, 52))
-  add_asset_uint8('kDrawLoadingLetters_TileData_BottomTiles', util.get_bytes(0x9105, 52))
-  add_asset_uint8('kDrawLoadingLetters_TileData_TopProp', util.get_bytes(0x9139, 52))
-  add_asset_uint8('kDrawLoadingLetters_TileData_BottomProp', util.get_bytes(0x916A, 52))
+  add_asset_uint8('kDrawLoadingLetters_TileData', util.get_bytes(util.A(0x90d1), 52))
+  add_asset_uint8('kDrawLoadingLetters_TileData_BottomTiles', util.get_bytes(util.A(0x9105), 52))
+  add_asset_uint8('kDrawLoadingLetters_TileData_TopProp', util.get_bytes(util.A(0x9139), 52))
+  add_asset_uint8('kDrawLoadingLetters_TileData_BottomProp', util.get_bytes(util.A(0x916A), 52))
 
-  add_asset_uint16('kOwTileAnimations_WaterTileNumbers', util.get_words(0x48000, 3))
-  add_asset_uint16('kOwTileAnimations_TileNumbers', util.get_words(0x48006, 64))
+  add_asset_uint16('kOwTileAnimations_WaterTileNumbers', util.get_words(util.A(0x48000), 3))
+  add_asset_uint16('kOwTileAnimations_TileNumbers', util.get_words(util.A(0x48006), 64))
     
   def add_star_pipe_warp():
-    if get_byte(0x48509) == 0x22:
-      p = get_24(0x4850a)
+    if get_byte(util.A(0x48509)) == 0x22:
+      p = get_24(util.A(0x4850a))
       n = get_word(p + 0xe00f - 0xdfff) // 2
       add_asset_uint16('kOwStarPipeWarp_SrcX_048431', get_words(get_24(p + 0xe016 - 0xdfff), n))
       add_asset_uint16('kOwStarPipeWarp_SrcY_048467', get_words(get_24(p + 0xe026 - 0xdfff), n))
-      assert get_byte(0x48566) == 0x22
-      p = get_24(0x48567)
+      assert get_byte(util.A(0x48566)) == 0x22
+      p = get_24(util.A(0x48567))
       add_asset_uint16('kOwStarPipeWarp_DstX_04849D', get_words(get_24(p + 0xe04b - 0xe03f), n))
       add_asset_uint16('kOwStarPipeWarp_DstY_0484D3', get_words(get_24(p + 0xe05d - 0xe03f), n))
     else:
-      add_asset_uint16('kOwStarPipeWarp_SrcX_048431', get_words(0x48431, 27))
-      add_asset_uint16('kOwStarPipeWarp_SrcY_048467', get_words(0x48467, 27))
-      add_asset_uint16('kOwStarPipeWarp_DstX_04849D', get_words(0x4849d, 27))
-      add_asset_uint16('kOwStarPipeWarp_DstY_0484D3', get_words(0x484d3, 27))
+      add_asset_uint16('kOwStarPipeWarp_SrcX_048431', get_words(util.A(0x48431), 27))
+      add_asset_uint16('kOwStarPipeWarp_SrcY_048467', get_words(util.A(0x48467), 27))
+      add_asset_uint16('kOwStarPipeWarp_DstX_04849D', get_words(util.A(0x4849d), 27))
+      add_asset_uint16('kOwStarPipeWarp_DstY_0484D3', get_words(util.A(0x484d3), 27))
 
   add_star_pipe_warp()
 
-  add_asset_uint16('kOwLevelsForcedMusicChange_048D74', get_words(0x48d74, 11))
-  add_asset_uint8('kOwSubmapMusic_048D8A', get_bytes(0x48d8a, 7))
-  add_asset_uint16('kOw_KoopaKidTeleportXYPos_048E49', get_words(0x48e49, 6))
-  add_asset_uint8('kOwTriggerSaveTiles_048F7F', get_bytes(0x48f7f, 8))
-  add_asset_uint16('kOwNoAutoMoveLevels_04906C', get_words(0x4906c, 6))
-  add_asset_uint8('kOwHardcodedPathLevel_049078', get_bytes(0x49078, 10))
-  add_asset_uint16('kOwHardcodedPathChocolateIsland2_049082', get_words(0x49082, 2))
-  add_asset_uint8('kOwHardcodedPathTiles_049086', get_bytes(0x49086, 68))
-  add_asset_uint8('kOwHardcodedPathDirs_0490CA', get_bytes(0x490ca, 68))
-  add_asset_uint8('kOwHardcodedPathStartIndex_04910E', get_bytes(0x4910e, 10))
-  add_asset_uint8('kOwExitLevelTiles_049426', get_bytes(0x49426, 10))
-  add_asset_uint16('kUpdateLevelName_DATA_049C91', get_words(0x49c91, 31))
-  add_asset_uint16('kUpdateLevelName_DATA_049CCF', get_words(0x49ccf, 15))
-  add_asset_uint16('kUpdateLevelName_DATA_049CED', get_words(0x49ced, 13))
-  add_asset_uint8('kOwExitSource_049964', get_bytes(0x49964, 70))
-  add_asset_uint8('kOwExitDest_0499AA', get_bytes(0x499aa, 70))
-  add_asset_uint8('kOwExitExtra_0499F0', get_bytes(0x499f0, 28))
-  add_asset_uint16('kOwExitLayerPosition_049A0C', get_words(0x49a0c, 12))
-  add_asset_uint8('kOwUnknownTableA_From_04A03C', get_bytes(0x4a03c, 24))
-  add_asset_uint16('kOwUnknownTableA_Alpha_04A054', get_words(0x4a054, 24))
-  add_asset_uint16('kOwUnknownTableA_XY_04A084', get_words(0x4a084, 48))
-  add_asset_uint8('kOwUnknownTableA_Direction_04A0E4', get_bytes(0x4a0e4, 24))
-  add_asset_uint8('kOwDirectionAfterBeatingLevel_04D678', get_bytes(0x4d678, 113))
-  add_asset_uint8('kOwSubmapTileset_04DC02', get_bytes(0x4dc02, 7))
-  add_asset_uint16('kLayer2EventData_Ptrs_04E359', get_words(0x4e359, 121))
+  add_asset_uint16('kOwLevelsForcedMusicChange_048D74', get_words(util.A(0x48d74), 11))
+  add_asset_uint8('kOwSubmapMusic_048D8A', get_bytes(util.A(0x48d8a), 7))
+  add_asset_uint16('kOw_KoopaKidTeleportXYPos_048E49', get_words(util.A(0x48e49), 6))
+  add_asset_uint8('kOwTriggerSaveTiles_048F7F', get_bytes(util.A(0x48f7f), 8))
+  add_asset_uint16('kOwNoAutoMoveLevels_04906C', get_words(util.A(0x4906c), 6))
+  add_asset_uint8('kOwHardcodedPathLevel_049078', get_bytes(util.A(0x49078), 10))
+  add_asset_uint16('kOwHardcodedPathChocolateIsland2_049082', get_words(util.A(0x49082), 2))
+  add_asset_uint8('kOwHardcodedPathTiles_049086', get_bytes(util.A(0x49086), 68))
+  add_asset_uint8('kOwHardcodedPathDirs_0490CA', get_bytes(util.A(0x490ca), 68))
+  add_asset_uint8('kOwHardcodedPathStartIndex_04910E', get_bytes(util.A(0x4910e), 10))
+  add_asset_uint8('kOwExitLevelTiles_049426', get_bytes(util.A(0x49426), 10))
+  add_asset_uint16('kUpdateLevelName_DATA_049C91', get_words(util.A(0x49c91), 31))
+  add_asset_uint16('kUpdateLevelName_DATA_049CCF', get_words(util.A(0x49ccf), 15))
+  add_asset_uint16('kUpdateLevelName_DATA_049CED', get_words(util.A(0x49ced), 13))
+  add_asset_uint8('kOwExitSource_049964', get_bytes(util.A(0x49964), 70))
+  add_asset_uint8('kOwExitDest_0499AA', get_bytes(util.A(0x499aa), 70))
+  add_asset_uint8('kOwExitExtra_0499F0', get_bytes(util.A(0x499f0), 28))
+  add_asset_uint16('kOwExitLayerPosition_049A0C', get_words(util.A(0x49a0c), 12))
+  add_asset_uint8('kOwUnknownTableA_From_04A03C', get_bytes(util.A(0x4a03c), 24))
+  add_asset_uint16('kOwUnknownTableA_Alpha_04A054', get_words(util.A(0x4a054), 24))
+  add_asset_uint16('kOwUnknownTableA_XY_04A084', get_words(util.A(0x4a084), 48))
+  add_asset_uint8('kOwUnknownTableA_Direction_04A0E4', get_bytes(util.A(0x4a0e4), 24))
+  add_asset_uint8('kOwDirectionAfterBeatingLevel_04D678', get_bytes(util.A(0x4d678), 113))
+  add_asset_uint8('kOwSubmapTileset_04DC02', get_bytes(util.A(0x4dc02), 7))
+  add_asset_uint16('kLayer2EventData_Ptrs_04E359', get_words(util.A(0x4e359), 121))
 
-  add_asset_uint8('kLmInitSaveData', get_bytes(0x05DDA0, 96) if get_byte(0x5dd80) != 0xff else b'')
-  add_asset_uint8('kInitializeSaveData_InitialOWPlayerPos', get_bytes(0x9EF0, 22))
+  add_asset_uint8('kLmInitSaveData', get_bytes(util.A(0x05DDA0), 96) if get_byte(util.A(0x5dd80)) != 0xff else b'')
+  add_asset_uint8('kInitializeSaveData_InitialOWPlayerPos', get_bytes(util.A(0x9EF0), 22))
 
-  add_asset_uint16('kOWSpr07_Smoke_DATA_04FC1E', get_words(0x4FC1E, 4))
+  add_asset_uint16('kOWSpr07_Smoke_DATA_04FC1E', get_words(util.A(0x4FC1E), 4))
 
-  add_asset_uint16('kLoadOverworldSprites_SubmapBooXPosOffset', get_words(0x4F666, 3))
-  add_asset_uint16('kLoadOverworldSprites_SubmapBooYPosOffset', get_words(0x4F66C, 3))
+  add_asset_uint16('kLoadOverworldSprites_SubmapBooXPosOffset', get_words(util.A(0x4F666), 3))
+  add_asset_uint16('kLoadOverworldSprites_SubmapBooYPosOffset', get_words(util.A(0x4F66C), 3))
 
-  add_asset_uint8('kLoadLevelHeader_LevelMusicTable', get_bytes(0x584DB, 8))
+  add_asset_uint8('kLoadLevelHeader_LevelMusicTable', get_bytes(util.A(0x584DB), 8))
 
   # hack
-  add_asset_uint8('kLevelsThatTriggerCutscenes', get_bytes(0xC9A7, 8) + bytearray([get_byte(0xCA0C), get_byte(0xCA13)]))
+  add_asset_uint8('kLevelsThatTriggerCutscenes', get_bytes(util.A(0xC9A7), 8) + bytearray([get_byte(util.A(0xCA0C)), get_byte(util.A(0xCA13))]))
 
   #add_asset_uint16('', util.get_words(0x, ))
   #add_asset_uint8('', util.get_bytes(0x, ))  
@@ -611,30 +621,30 @@ def print_all(args):
         r.pop()
     add_asset_packed(name, r)
 
-  add_exgfx('kLmExgfx', 0xFF600, 128)
-  add_exgfx('kLmSuperExgfx', get_24(0xFF937), 0x1000 - 0x100)
-  add_asset_uint8('kLmGraphicsRemapped', remove_trail_zero(util.get_bytes(0xFF200, 1024)) if LUNAR_MAGIC else b'')
+  add_exgfx('kLmExgfx', util.A(0xFF600), 128)
+  add_exgfx('kLmSuperExgfx', get_24(util.A(util.A(0xFF937))), 0x1000 - 0x100)
+  add_asset_uint8('kLmGraphicsRemapped', remove_trail_zero(util.get_bytes(util.A(0xFF200), 1024)) if LUNAR_MAGIC else b'')
 
   def add_load_level_stuff():
-    lm_load_level = get_byte(0x5D9A1) == 0x22
+    lm_load_level = get_byte(util.A(0x5D9A1)) == 0x22
 
-    p = get_24(0x6F624)
+    p = get_24(util.A(0x6F624))
     add_asset_uint16('kLmModifyMap16Ids', util.get_words(p, 4096) if lm_load_level and p != 0xffffff else b'')
-    add_asset_uint8('kLm5DE00', util.get_bytes(0x5DE00, 512) if lm_load_level else b'')    
-    add_asset_uint8('kLm6FC00', util.get_bytes(0x6FC00, 512) if lm_load_level else b'')    
-    add_asset_uint8('kLm6FE00', util.get_bytes(0x6FE00, 512) if lm_load_level else b'')    
+    add_asset_uint8('kLm5DE00', util.get_bytes(util.A(0x5DE00), 512) if lm_load_level else b'')    
+    add_asset_uint8('kLm6FC00', util.get_bytes(util.A(0x6FC00), 512) if lm_load_level else b'')    
+    add_asset_uint8('kLm6FE00', util.get_bytes(util.A(0x6FE00), 512) if lm_load_level else b'')    
 
-    p = util.get_24(util.get_24(0x5D9A2) + 0x10BBDF - 0x10BB83) if lm_load_level else 0
+    p = util.get_24(util.get_24(util.A(0x5D9A2)) + 0x10BBDF - 0x10BB83) if lm_load_level else 0
     add_asset_uint8('kLm10B8BC', util.get_bytes(p, 512) if p != 0 else b'')    
-    add_asset_uint8('kLmLevelData3FE00', util.get_bytes(0x3FE00, 512) if lm_load_level else b'')    
+    add_asset_uint8('kLmLevelData3FE00', util.get_bytes(util.A(0x3FE00), 512) if lm_load_level else b'')    
 
-    add_asset_uint8('kLmLevelData5DC85', util.get_bytes(get_24(0x5DC86), 512) if lm_load_level else b'')    
-    add_asset_uint8('kLmLevelData5DC8A', util.get_bytes(get_24(0x5DC8B), 512) if lm_load_level else b'')    
-    add_asset_uint8('kLm5FE00', util.get_bytes(get_24(0x5DC81), 512) if lm_load_level else b'')    
+    add_asset_uint8('kLmLevelData5DC85', util.get_bytes(get_24(util.A(0x5DC86)), 512) if lm_load_level else b'')    
+    add_asset_uint8('kLmLevelData5DC8A', util.get_bytes(get_24(util.A(0x5DC8B)), 512) if lm_load_level else b'')    
+    add_asset_uint8('kLm5FE00', util.get_bytes(get_24(util.A(0x5DC81)), 512) if lm_load_level else b'')    
 
-    add_asset_uint8('kLevelInfo_05F800', util.get_bytes(get_24(0xde191), 0x200) if lm_load_level else b'')
-    add_asset_uint8('kLevelInfo_05FA00', util.get_bytes(get_24(0xde198), 0x200) if lm_load_level else b'')
-    add_asset_uint8('kLevelInfo_05FC00', util.get_bytes(get_24(0xde19f), 0x200) if lm_load_level else b'')
+    add_asset_uint8('kLevelInfo_05F800', util.get_bytes(get_24(util.A(0xde191)), 0x200) if lm_load_level else b'')
+    add_asset_uint8('kLevelInfo_05FA00', util.get_bytes(get_24(util.A(0xde198)), 0x200) if lm_load_level else b'')
+    add_asset_uint8('kLevelInfo_05FC00', util.get_bytes(get_24(util.A(0xde19f)), 0x200) if lm_load_level else b'')
     lm_feat.flags |= kLmFeature_LoadLevel if lm_load_level else 0
 
   add_load_level_stuff()
@@ -642,7 +652,7 @@ def print_all(args):
   def add_lm_map16():
     if LUNAR_MAGIC:
       B = 0x06F500
-      half = (get_byte(0x6F54B) != 0xB0)
+      half = (get_byte(util.A(0x6F54B)) != 0xB0)
       B -= 2 if half else 0
       arr = [
         get_byte(B + 0x57)<<16|(get_word(B + 0x53)+0x1000&0xFFFF),
@@ -701,8 +711,8 @@ def print_all(args):
   # parse all level exanimation 
   lm_lvl_exanim = []
   lm_exanim_ranges = []
-  if LUNAR_MAGIC and get_byte(0x0583AD) == 0x22:  # call LmHook_InitExanimForLevel
-    LmHook_InitExanimForLevel = get_24(0x583AE)
+  if LUNAR_MAGIC and get_byte(util.A(0x0583AD)) == 0x22:  # call LmHook_InitExanimForLevel
+    LmHook_InitExanimForLevel = get_24(util.A(0x583AE))
     if get_bytes(LmHook_InitExanimForLevel, 4) != b'\xe2\x30\x8b\xa2':
       raise Exception('The Exanim file format is incorrect. ' + extra_lunar_magic_text())
 
@@ -722,47 +732,47 @@ def print_all(args):
   kSkipOwDecompressMap = {
     b'\xea\xea\xea\xea' : kLmFeature_SkipOverworldDecompress,
     b'\x22\x00\xFC\x0E' : 0, # lm
-    b'\x22\x28\xBA\x00' : 0, # orig
+    jsl(0x00BA28) : 0, # orig
   }
 
   lm_feat.flags |= kLmFeature_LmEnabled if LUNAR_MAGIC else 0
-  lm_feat.flags |= kSkipOwDecompressMap[bytes(get_bytes(0xA149, 4))]
-  lm_feat.flags |= kLmFeature_OverworldTiles4bpp if get_byte(0x480D0) == 0x60 else 0
-  lm_feat.flags |= kLmFeature_Copy512colors if get_byte(0xA5E1) == 0xea else 0
-  lm_feat.flags |= kLmFeature_WeirdPalette if get_byte(0xAF71) == 0x22 else 0
-  lm_feat.flags |= kLmFeature_SkipLoadPaletteHook if get_byte(0xEF570) != 0xc2 else 0
-  lm_feat.flags |= kLmFeature_GfxUpload if get_bytes(0xAA6B, 4) != b'\x22\x28\xBA\x00' else 0
-  lm_feat.flags |= kLmFeature_4bppgfx if get_byte(0xAACE) == 0x10 else 0
-  lm_feat.flags |= kLmFeature_DontSetYposForIntroMarch if get_byte(0x05B15D) == 0xea else 0
-  lm_feat.flags |= kLmFeature_MusicRegTweak if get_byte(0x5855C) == 0x8d else 0
-  lm_feat.flags |= kLmFeature_TideWaterTweak if get_byte(0xa045) == 0x22 else 0
-  lm_feat.flags |= kLmFeature_EnemyCollTweak if get_byte(0x194B6) == 0x5c else 0
-  lm_feat.flags |= kLmFeature_Ow4bppGfx if get_bytes(0xA149, 4) != b'\x22\x28\xBA\x00' else 0
-  lm_feat.flags |= kLmFeature_DontResetOwPlayersMap if get_byte(0xa0a0) == 0xea else 0
-  lm_feat.flags |= kLmFeature_NonStdGfxAA8D if get_byte(0xAA8D) != 0x08 else 0
-  lm_feat.flags |= kLmFeature_TimerTweaks if get_byte(0x58E24) == 0x8f else 0
-  lm_feat.flags |= kLmFeature_NoDefaultSavePrompts if get_byte(0x3BA26) == 0 else 0
+  lm_feat.flags |= kSkipOwDecompressMap[bytes(get_bytes(util.A(0xA149), 4))]
+  lm_feat.flags |= kLmFeature_OverworldTiles4bpp if get_byte(util.A(0x480D0)) == 0x60 else 0
+  lm_feat.flags |= kLmFeature_Copy512colors if get_byte(util.A(0xA5E1)) == 0xea else 0
+  lm_feat.flags |= kLmFeature_WeirdPalette if get_byte(util.A(0xAF71)) == 0x22 else 0
+  lm_feat.flags |= kLmFeature_SkipLoadPaletteHook if get_byte(util.A(0xEF570)) != 0xc2 else 0
+  lm_feat.flags |= kLmFeature_GfxUpload if get_bytes(util.A(0xAA6B), 4) != jsl(0x00BA28) else 0
+  lm_feat.flags |= kLmFeature_4bppgfx if get_byte(util.A(0xAACE)) == 0x10 else 0
+  lm_feat.flags |= kLmFeature_DontSetYposForIntroMarch if get_byte(util.A(0x05B15D)) == 0xea else 0
+  lm_feat.flags |= kLmFeature_MusicRegTweak if get_byte(util.A(0x5855C)) == 0x8d else 0
+  lm_feat.flags |= kLmFeature_TideWaterTweak if get_byte(util.A(0xa045)) == 0x22 else 0
+  lm_feat.flags |= kLmFeature_EnemyCollTweak if get_byte(util.A(0x194B6)) == 0x5c else 0
+  lm_feat.flags |= kLmFeature_Ow4bppGfx if get_bytes(util.A(0xA149), 4) != jsl(0x00BA28) else 0
+  lm_feat.flags |= kLmFeature_DontResetOwPlayersMap if get_byte(util.A(0xa0a0)) == 0xea else 0
+  lm_feat.flags |= kLmFeature_NonStdGfxAA8D if get_byte(util.A(0xAA8D)) != 0x08 else 0
+  lm_feat.flags |= kLmFeature_TimerTweaks if get_byte(util.A(0x58E24)) == 0x8f else 0
+  lm_feat.flags |= kLmFeature_NoDefaultSavePrompts if get_byte(util.A(0x3BA26)) == 0 else 0
 
 
   #  Allows Mario to perform a wall kick by sliding along a wall and pressing the
   # B button.
-  lm_feat.hacks |= kHack_Walljump if get_24(0xA2A1) != 0x86F122 else 0
+  lm_feat.hacks |= kHack_Walljump if get_bytes(util.A(0xA2A1), 3) != jsl(0x0586F1)[:3] else 0
   
   def add_custom_ow_palette():
     r = b''
-    if get_byte(0xAD32) == 0x22:
+    if get_byte(util.A(0xAD32)) == 0x22:
       lm_feat.flags |= kLmFeature_OwPalette
-      p = get_24(0xAD33) - 0x10813F
+      p = get_24(util.A(0xAD33)) - 0x10813F
       r = get_rats_bytes(get_byte(p + 0x10815D) << 16 | get_word(p + 0x108151))
     add_asset_uint8('kLmOverworldPal', r)
   add_custom_ow_palette()
 
   def add_custom_display_message():
-    flag = get_byte(0x5B1A3) == 0x22
+    flag = get_byte(util.A(0x5B1A3)) == 0x22
     lm_feat.flags |= kLmFeature_CustomDisplayMessage if flag else 0
-    add_asset_uint8('kLmDisplayMessage_Tab0', get_rats_bytes(get_24(0x3BC0B)) if flag else b'')
-    add_asset_uint16('kLmDisplayMessage_3BC7F', get_words(0x3BC7F, 8) if flag else b'')
-    add_asset_uint16('kLmDisplayMessage_3BE80', get_words(0x3BE80, 192) if flag else b'')
+    add_asset_uint8('kLmDisplayMessage_Tab0', get_rats_bytes(get_24(util.A(0x3BC0B))) if flag else b'')
+    add_asset_uint16('kLmDisplayMessage_3BC7F', get_words(util.A(0x3BC7F), 8) if flag else b'')
+    add_asset_uint16('kLmDisplayMessage_3BE80', get_words(util.A(0x3BE80), 192) if flag else b'')
     r = []
     if flag:
       for a in [0x3BB9A, 0x3BBA1, 0x3BBA6, 0x3BBAB, 0x3BBB0]:
@@ -773,20 +783,20 @@ def print_all(args):
   add_custom_display_message()
 
   def add_custom_title_screen():
-    lm_feat.flags |= kLmFeature_CustomTitleScreenDemo if get_byte(0x9c6f) == 0x22 else 0
+    lm_feat.flags |= kLmFeature_CustomTitleScreenDemo if get_byte(util.A(0x9c6f)) == 0x22 else 0
     r = b''
     if lm_feat.flags & kLmFeature_CustomTitleScreenDemo:
-      p = get_24(get_24(0x9c70) + 0x10F6B0 - 0x10F68D) - 2
+      p = get_24(get_24(util.A(0x9c70)) + 0x10F6B0 - 0x10F68D) - 2
       r = get_bytes(p, get_rats_size(p))
     add_asset_uint8('kLmTitleScreenMoves', r)
 
   add_custom_title_screen()
 
   def add_level_names_patch():
-    lm_feat.flags |= kLmFeature_LevelNamesPatch if get_byte(0x48E81) == 0x22 else 0
+    lm_feat.flags |= kLmFeature_LevelNamesPatch if get_byte(util.A(0x48E81)) == 0x22 else 0
     r = b''
     if lm_feat.flags & kLmFeature_LevelNamesPatch:
-      p = get_24(0x3BB57)
+      p = get_24(util.A(0x3BB57))
       r = get_bytes(p, get_rats_size(p))
     add_asset_uint8('kLmLevelNamesPatch', r)
  
@@ -795,21 +805,21 @@ def print_all(args):
   # compressed layer1 and events
   def add_overworld():
     d = []
-    if get_byte(0x4d813) == 0x5c:
-      d = get_comp_data(get_byte(0x4d808) << 16 | get_word(0x4d803))
+    if get_byte(util.A(0x4d813)) == 0x5c:
+      d = get_comp_data(get_byte(util.A(0x4d808)) << 16 | get_word(util.A(0x4d803)))
     add_asset_uint8('kOwLayer1AndEvents', d)
 
     d = []
-    if get_byte(0x4d832) == 0x5c:
-      d = get_comp_data(get_byte(0x4d827) << 16 | get_word(0x4d822))
+    if get_byte(util.A(0x4d832)) == 0x5c:
+      d = get_comp_data(get_byte(util.A(0x4d827)) << 16 | get_word(util.A(0x4d822)))
     add_asset_uint8('kOwLayer1AndEvents2', d)
 
   add_overworld()
 
   r = b''
-  if LUNAR_MAGIC and get_byte(0xA140) == 0x22:
-    lm_feat.kLmLvlInfo_addr_other = get_byte(0xFFAC2) << 16 | get_word(0xFFAB9)
-    lm_feat.kLmLvlInfo_addr = get_24(0xFF7FF)
+  if LUNAR_MAGIC and get_byte(util.A(0xA140)) == 0x22:
+    lm_feat.kLmLvlInfo_addr_other = get_byte(util.A(0xFFAC2)) << 16 | get_word(util.A(0xFFAB9))
+    lm_feat.kLmLvlInfo_addr = get_24(util.A(0xFF7FF))
     r = util.get_words(lm_feat.kLmLvlInfo_addr, (512+8) * 16)
   add_asset_uint16('kLmLvlInfo', r)
   #add_lm_lvlinfo()
@@ -820,7 +830,7 @@ def print_all(args):
     r = []
     if LUNAR_MAGIC:
       for i in range(16):
-        p = util.get_24(0xEFD50 + i * 3)
+        p = util.get_24(util.A(0xEFD50) + i * 3)
         if p:
           r.append(util.get_bytes(p, 0x8000 - (p & 0x7fff)))
         else:
@@ -831,7 +841,7 @@ def print_all(args):
   def add_sprite_extra_size():
     r = b''
     if LUNAR_MAGIC:
-      p = util.get_24(0xef30c)
+      p = util.get_24(util.A(0xef30c))
       if p != 0xffffff:
         r = util.get_bytes(p, 1024)
     add_asset_uint8('kLmSprExtraSize', r)

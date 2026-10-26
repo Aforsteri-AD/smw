@@ -12,9 +12,23 @@ COMMON_ROM_NAMES = ['smw.sfc', '../smw.sfc']
 DEFAULT_ROM_DIRECTORY = os.path.dirname(__file__)
 
 SMW_SHA1_US = '6B47BB75D16514B6A476AA0C73A683A2A4C18765'
+SMW_SHA1_EU1 = '46BF36BE1C3A2CE9DE7581323370BD2D891AD5A1'
 SMW_SHA1 = {
    SMW_SHA1_US : ('us', 'Super Mario World (USA)'),
+   SMW_SHA1_EU1 : ('eu1', 'Super Mario World (Europe) (Rev 1)'),
 }
+
+# Translates a hardcoded address of the US ROM into the matching address of the loaded ROM.
+# Pointers read out of the ROM itself already refer to the loaded ROM and must not be translated.
+def A(addr):
+  if ROM.language != 'eu1' or ((addr >> 16) & 0x7f) >= 0x10 or not (addr & 0x8000):
+    return addr
+  import bisect, eu_addr_map
+  anchors = eu_addr_map.kAnchors
+  i = bisect.bisect_right(anchors, (addr & 0x7fffff, 0xffffffff)) - 1
+  if i < 0 or (anchors[i][0] >> 16) != ((addr >> 16) & 0x7f):
+    return addr
+  return addr + anchors[i][1] - anchors[i][0]
 
 def load_rom(filename, disable_hash_check = False, rom_hack = None):
   global ROM
@@ -101,7 +115,7 @@ class LoadedRom:
     entry = SMW_SHA1.get(hash)
     self.language = entry[0] if entry != None else None
 
-    if not disable_hash_check and self.language != 'us':
+    if not disable_hash_check and self.language not in ('us', 'eu1'):
       raise Exception(f"\n\nROM with hash {hash} not supported.\n\nExpected {SMW_SHA1_US}.\nPlease verify your ROM is \"Super Mario World\".\n\nIf you want to use a LunarMagic edited rom you can run restool with -f to bypass this check.");
 
   def get_byte(self, ea):
@@ -191,7 +205,11 @@ class Reader:
       self.ea += 0x8000
     return r
 
-def decomp(ea, rb, offset_is_be = True, return_length = False):
+# The Europe Rev 1 ROM stores the copy offsets of its compressed data little endian.
+# If |le_offset_positions| is a list, the positions of those offsets are appended to it.
+def decomp(ea, rb, offset_is_be = None, return_length = False, le_offset_positions = None):
+  if offset_is_be == None:
+    offset_is_be = ROM.language != 'eu1'
   result = bytearray()
   reader = Reader(ea, rb)
   while True:
@@ -215,6 +233,8 @@ def decomp(ea, rb, offset_is_be = True, return_length = False):
         lx -= 1
     elif cmd & 0x80: # 1xx - copy
 #      print('copy %d' % lx)
+      if not offset_is_be and le_offset_positions != None:
+        le_offset_positions.append((reader.ea - ea) & 0x7fff)
       offs = reader.next() << 8
       offs |= reader.next()
       if not offset_is_be: offs = ((offs >> 8) | (offs << 8)) & 0xffff
