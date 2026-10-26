@@ -748,6 +748,9 @@ static void HandleCommand(uint32 j, bool pressed) {
 
 static void HandleInput(int keyCode, int keyMod, bool pressed) {
   int j = FindCmdForSdlKey(keyCode, (SDL_Keymod)keyMod);
+  // Fall back to the unmodified key, so joypad keys keep working while a modifier is mapped to a button.
+  if (j == 0 && keyMod != 0)
+    j = FindCmdForSdlKey(keyCode, 0);
   if (j != 0)
     HandleCommand(j, pressed);
 }
