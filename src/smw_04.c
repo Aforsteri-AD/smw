@@ -3,6 +3,10 @@
 #include "smw_rtl.h"
 #include "variables.h"
 #include "assets/smw_assets.h"
+#include "config.h"
+
+// Set when a level without a save prompt was beaten and SaveAfterEachLevel is enabled.
+static bool g_ow_autosave_pending;
 
 void (*kHandleCurrentOverworldProcess_PtrsLong04857D[13])(void) = {
     &OwProcess00_OverworldEntryInitialization,
@@ -740,6 +744,20 @@ LABEL_11:
   OwProcess04_PlayerIsMoving_049831();
 }
 
+static void CopyOwProgressToSaveBuffer(void) {
+  for (uint8 i = 44; (i & 0x80) == 0; --i)
+    ow_save_buffer[i + 96] = ow_event_flags[i];
+  uint16 v2 = player_current_characterx4;
+  uint16 v3 = player_current_characterx4 ^ 4;
+  *(uint16 *)&ow_save_buffer[(player_current_characterx4 ^ 4) + 117] = *(uint16 *)&ow_save_buffer[player_current_characterx4 + 117];
+  *(uint16 *)&ow_save_buffer[v3 + 119] = *(uint16 *)&ow_save_buffer[v2 + 119];
+  *(uint16 *)&ow_save_buffer[v3 + 125] = *(uint16 *)&ow_save_buffer[v2 + 125];
+  *(uint16 *)&ow_save_buffer[v3 + 127] = *(uint16 *)&ow_save_buffer[v2 + 127];
+  v2 >>= 1;
+  *(uint16 *)&ow_save_buffer[(v2 ^ 2) + 113] = *(uint16 *)&ow_save_buffer[v2 + 113];
+  ow_save_buffer[(((uint8)v2 >> 1) ^ 1) + 111] = ow_save_buffer[((uint8)v2 >> 1) + 111];
+}
+
 void OwProcess02_HandleLevelBeaten() {  // 048f87
   uint16 r4 = UnlockOverworldPathBasedOnExit();
   uint8 v0 = 7;
@@ -755,20 +773,15 @@ void OwProcess02_HandleLevelBeaten() {  // 048f87
   }
 
   while (a != kOwTriggerSaveTiles_048F7F[v0]) {
-    if ((--v0 & 0x80) != 0)
+    if ((--v0 & 0x80) != 0) {
+      if (g_config.save_after_each_level && (int8)misc_exit_level_action > 0) {
+        CopyOwProgressToSaveBuffer();
+        g_ow_autosave_pending = true;
+      }
       goto LABEL_10;
+    }
   }
-  for (uint8 i = 44; (i & 0x80) == 0; --i)
-    ow_save_buffer[i + 96] = ow_event_flags[i];
-  uint16 v2 = player_current_characterx4;
-  uint16 v3 = player_current_characterx4 ^ 4;
-  *(uint16 *)&ow_save_buffer[(player_current_characterx4 ^ 4) + 117] = *(uint16 *)&ow_save_buffer[player_current_characterx4 + 117];
-  *(uint16 *)&ow_save_buffer[v3 + 119] = *(uint16 *)&ow_save_buffer[v2 + 119];
-  *(uint16 *)&ow_save_buffer[v3 + 125] = *(uint16 *)&ow_save_buffer[v2 + 125];
-  *(uint16 *)&ow_save_buffer[v3 + 127] = *(uint16 *)&ow_save_buffer[v2 + 127];
-  v2 >>= 1;
-  *(uint16 *)&ow_save_buffer[(v2 ^ 2) + 113] = *(uint16 *)&ow_save_buffer[v2 + 113];
-  ow_save_buffer[(((uint8)v2 >> 1) ^ 1) + 111] = ow_save_buffer[((uint8)v2 >> 1) + 111];
+  CopyOwProgressToSaveBuffer();
   if (misc_exit_level_action == 0xE0) {
     if ((--timer_keep_game_mode_active & 0x80) == 0)
       return;
@@ -795,6 +808,12 @@ void UpdateSaveBuffer() {  // 049037
       ow_save_buffer[i] = ow_level_tile_settings[i];
     flag_show_save_prompt = 0;
     pointer_display_overworld_prompt = 5;
+  } else if (g_ow_autosave_pending) {
+    // Save silently, like answering yes to the save prompt.
+    for (uint8 i = 95; (i & 0x80) == 0; --i)
+      ow_save_buffer[i] = ow_level_tile_settings[i];
+    g_ow_autosave_pending = false;
+    SaveGame();
   }
 }
 

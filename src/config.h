@@ -69,6 +69,7 @@ typedef struct Config {
   bool resume_msu;
   bool disable_frame_delay;
   bool save_playthrough;
+  bool save_after_each_level;
   uint8 msuvolume;
   uint32 features0;
 

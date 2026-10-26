@@ -431,6 +431,8 @@ static bool HandleIniConfig(int section, const char *key, char *value) {
       return true;
     } else if (StringEqualsNoCase(key, "SavePlaythrough")) {
       return ParseBool(value, &g_config.save_playthrough);
+    } else if (StringEqualsNoCase(key, "SaveAfterEachLevel")) {
+      return ParseBool(value, &g_config.save_after_each_level);
     } else if (StringEqualsNoCase(key, "DisplayPerfInTitle")) {
       return ParseBool(value, &g_config.display_perf_title);
     } else if (StringEqualsNoCase(key, "DisableFrameDelay")) {
